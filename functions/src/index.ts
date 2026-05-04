@@ -604,7 +604,10 @@ export const deleteOldScansCallable = functions.https.onCall(
 );
 
 export const deleteOldScansScheduler = onSchedule(
-  "every 24 hours",
+  {
+    schedule: "48 9 * * 2",
+    timeZone: "UTC",
+  },
   async () => {
     try {
       const result = await runDeleteOldScansCleanup();
