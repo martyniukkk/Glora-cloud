@@ -10,6 +10,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { setGlobalOptions } from "firebase-functions";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { DateTime } from "luxon";
 // import { onCall } from "firebase-functions/v2/https";
 // import * as logger from "firebase-functions/logger";
 
@@ -29,6 +30,7 @@ setGlobalOptions({ maxInstances: 10 });
 admin.initializeApp();
 
 const BATCH_SIZE = 400;
+const FCM_BATCH_SIZE = 500;
 const SCAN_READ_PAGE_SIZE = 800;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_WEEKS = 4;
@@ -616,5 +618,87 @@ export const deleteOldScansScheduler = onSchedule(
       console.error("deleteOldScansScheduler failed", error);
       throw error;
     }
+  },
+);
+
+const DAILY_NOTIFICATIONS: Record<number, { title: string; body: string }> = {
+  9: {
+    title: "Good morning ☀️",
+    body: "Scan your breakfast and start your day skin-smart with Glora.",
+  },
+  13: {
+    title: "Lunchtime check-in 🥗",
+    body: "What's on your plate? Snap a quick scan to keep your acne risk in check.",
+  },
+  19: {
+    title: "Dinner time 🌙",
+    body: "One last scan to wrap up your day — see how today's meals affect your skin.",
+  },
+};
+
+export const sendDailyScanReminders = onSchedule(
+  {
+    schedule: "0 * * * *",
+    timeZone: "UTC",
+  },
+  async (event) => {
+    const nowUtc = DateTime.fromISO(event.scheduleTime, { setZone: true }).toUTC();
+    const usersSnapshot = await admin.firestore().collection("users").get();
+    const messages: admin.messaging.TopicMessage[] = [];
+    let missingTimezone = 0;
+    let invalidTimezone = 0;
+
+    for (const user of usersSnapshot.docs) {
+      const timezone = user.get("timezone");
+      if (typeof timezone !== "string" || !timezone.trim()) {
+        missingTimezone += 1;
+        continue;
+      }
+
+      const localTime = nowUtc.setZone(timezone);
+      if (!localTime.isValid) {
+        invalidTimezone += 1;
+        continue;
+      }
+
+      const notification = DAILY_NOTIFICATIONS[localTime.hour];
+      if (!notification) {
+        continue;
+      }
+
+      messages.push({
+        topic: user.id,
+        notification,
+      });
+    }
+
+    let sent = 0;
+    let failed = 0;
+
+    for (let offset = 0; offset < messages.length; offset += FCM_BATCH_SIZE) {
+      const batch = messages.slice(offset, offset + FCM_BATCH_SIZE);
+      const response = await admin.messaging().sendEach(batch);
+      sent += response.successCount;
+      failed += response.failureCount;
+
+      response.responses.forEach((result, index) => {
+        if (!result.success) {
+          console.error("Daily reminder send failed", {
+            uid: batch[index].topic,
+            error: result.error,
+          });
+        }
+      });
+    }
+
+    console.info("sendDailyScanReminders completed", {
+      utcTime: nowUtc.toISO(),
+      usersRead: usersSnapshot.size,
+      eligible: messages.length,
+      sent,
+      failed,
+      missingTimezone,
+      invalidTimezone,
+    });
   },
 );
