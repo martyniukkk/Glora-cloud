@@ -624,15 +624,11 @@ export const deleteOldScansScheduler = onSchedule(
 const DAILY_NOTIFICATIONS: Record<number, { title: string; body: string }> = {
   9: {
     title: "Good morning ☀️",
-    body: "Scan your breakfast and start your day skin-smart with Glora.",
-  },
-  13: {
-    title: "Lunchtime check-in 🥗",
-    body: "What's on your plate? Snap a quick scan to keep your acne risk in check.",
+    body: "Scan a skincare product before your morning routine and make a skin-smart choice with Glora.",
   },
   19: {
-    title: "Dinner time 🌙",
-    body: "One last scan to wrap up your day — see how today's meals affect your skin.",
+    title: "Evening skincare check 🌙",
+    body: "Scan a skincare product before your evening routine and keep building healthier skin habits.",
   },
 };
 
